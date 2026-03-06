@@ -3,8 +3,9 @@ const windsurf = require('./windsurf');
 const claude = require('./claude');
 const vscode = require('./vscode');
 const zed = require('./zed');
+const opencode = require('./opencode');
 
-const editors = [cursor, windsurf, claude, vscode, zed];
+const editors = [cursor, windsurf, claude, vscode, zed, opencode];
 
 /**
  * Get all chats from all editor adapters, sorted by most recent first.
