@@ -3,9 +3,10 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearSca
 import { Doughnut, Bar } from 'react-chartjs-2'
 import { Search, ChevronDown, ChevronUp } from 'lucide-react'
 import { fetchProjects } from '../lib/api'
-import { editorColor, editorLabel, formatNumber, formatDate } from '../lib/constants'
+import { editorColor, editorLabel, formatNumber, formatDate, dateRangeToApiParams } from '../lib/constants'
 import { useTheme } from '../lib/theme'
 import KpiCard from '../components/KpiCard'
+import DateRangePicker from '../components/DateRangePicker'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement)
 
@@ -21,11 +22,12 @@ export default function Projects({ overview }) {
   const [search, setSearch] = useState('')
   const [editorFilter, setEditorFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
+  const [dateRange, setDateRange] = useState(null)
   const editors = overview?.editors || []
 
   useEffect(() => {
-    fetchProjects().then(setProjects)
-  }, [])
+    fetchProjects(dateRangeToApiParams(dateRange)).then(setProjects)
+  }, [dateRange])
 
   if (!projects) return <div className="text-sm py-12 text-center" style={{ color: 'var(--c-text2)' }}>loading projects...</div>
 
@@ -108,29 +110,32 @@ export default function Projects({ overview }) {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2">
-        <select
-          value={editorFilter}
-          onChange={e => setEditorFilter(e.target.value)}
-          className="px-2 py-2 text-sm outline-none"
-          style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
-        >
-          <option value="">All Editors</option>
-          {editors.map(e => (
-            <option key={e.id} value={e.id}>{editorLabel(e.id)}</option>
-          ))}
-        </select>
-        <div className="relative max-w-sm flex-1">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
-          <input
-            type="text"
-            placeholder="search projects..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 text-sm outline-none"
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <select
+            value={editorFilter}
+            onChange={e => setEditorFilter(e.target.value)}
+            className="px-2 py-2 text-sm outline-none"
             style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
-          />
+          >
+            <option value="">All Editors</option>
+            {editors.map(e => (
+              <option key={e.id} value={e.id}>{editorLabel(e.id)}</option>
+            ))}
+          </select>
+          <div className="relative max-w-sm flex-1">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
+            <input
+              type="text"
+              placeholder="search projects..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 text-sm outline-none"
+              style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
+            />
+          </div>
         </div>
+        <DateRangePicker value={dateRange} onChange={setDateRange} />
       </div>
 
       {/* Project list */}

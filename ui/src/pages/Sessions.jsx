@@ -4,9 +4,10 @@ import { Search, Filter, List, FolderOpen, ChevronDown, ChevronRight, X } from '
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { fetchChats } from '../lib/api'
-import { editorColor, editorLabel, formatDate } from '../lib/constants'
+import { editorColor, editorLabel, formatDate, dateRangeToApiParams } from '../lib/constants'
 import { useTheme } from '../lib/theme'
 import EditorDot from '../components/EditorDot'
+import DateRangePicker from '../components/DateRangePicker'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -107,7 +108,8 @@ export default function Sessions({ overview }) {
   const [loading, setLoading] = useState(true)
   const [groupByProject, setGroupByProject] = useState(false)
   const [collapsedProjects, setCollapsedProjects] = useState(new Set())
-  const [dateRange, setDateRange] = useState(null) // [startWeek, endWeek]
+  const [dateRange, setDateRange] = useState(null) // [startWeek, endWeek] — chart drag-select
+  const [apiDateRange, setApiDateRange] = useState(null) // { from, to } — server-side date filter
   const navigate = useNavigate()
   const chartRef = useRef(null)
 
@@ -117,12 +119,12 @@ export default function Sessions({ overview }) {
 
   useEffect(() => {
     setLoading(true)
-    fetchChats({ editor, limit: 1000 }).then(data => {
+    fetchChats({ editor, limit: 1000, ...dateRangeToApiParams(apiDateRange) }).then(data => {
       setChats(data.chats)
       setTotal(data.total)
       setLoading(false)
     })
-  }, [editor])
+  }, [editor, apiDateRange])
 
   const searchFiltered = search
     ? chats.filter(c =>
@@ -282,47 +284,51 @@ export default function Sessions({ overview }) {
       )}
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
-          <select
-            value={editor}
-            onChange={e => setEditor(e.target.value)}
-            className="pl-8 pr-3 py-2 text-sm outline-none appearance-none cursor-pointer"
-            style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
+            <select
+              value={editor}
+              onChange={e => setEditor(e.target.value)}
+              className="pl-8 pr-3 py-2 text-sm outline-none appearance-none cursor-pointer"
+              style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
+            >
+              <option value="">all editors</option>
+              {editors.map(e => (
+                <option key={e.id} value={e.id}>{editorLabel(e.id)} ({e.count})</option>
+              ))}
+            </select>
+          </div>
+          <div className="relative flex-1 max-w-sm">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
+            <input
+              type="text"
+              placeholder="search sessions..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 text-sm outline-none"
+              style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
+            />
+          </div>
+          <button
+            onClick={() => setGroupByProject(!groupByProject)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs transition"
+            style={{
+              border: groupByProject ? '1px solid var(--c-accent)' : '1px solid var(--c-border)',
+              color: groupByProject ? 'var(--c-accent)' : 'var(--c-text2)',
+              background: groupByProject ? 'rgba(99,102,241,0.1)' : 'transparent',
+            }}
           >
-            <option value="">all editors</option>
-            {editors.map(e => (
-              <option key={e.id} value={e.id}>{editorLabel(e.id)} ({e.count})</option>
-            ))}
-          </select>
+            {groupByProject ? <FolderOpen size={13} /> : <List size={13} />}
+            {groupByProject ? 'grouped' : 'flat'}
+          </button>
+          <span className="text-[10px]" style={{ color: 'var(--c-text3)' }}>
+            {loading ? 'loading...' : `${filtered.length} of ${total}`}
+          </span>
         </div>
-        <div className="relative flex-1 max-w-sm">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text3)' }} />
-          <input
-            type="text"
-            placeholder="search sessions..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 text-sm outline-none"
-            style={{ background: 'var(--c-bg3)', color: 'var(--c-text)', border: '1px solid var(--c-border)' }}
-          />
-        </div>
-        <button
-          onClick={() => setGroupByProject(!groupByProject)}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs transition"
-          style={{
-            border: groupByProject ? '1px solid var(--c-accent)' : '1px solid var(--c-border)',
-            color: groupByProject ? 'var(--c-accent)' : 'var(--c-text2)',
-            background: groupByProject ? 'rgba(99,102,241,0.1)' : 'transparent',
-          }}
-        >
-          {groupByProject ? <FolderOpen size={13} /> : <List size={13} />}
-          {groupByProject ? 'grouped' : 'flat'}
-        </button>
-        <span className="text-[10px]" style={{ color: 'var(--c-text3)' }}>
-          {loading ? 'loading...' : `${filtered.length} of ${total}`}
-        </span>
+        {/* Server-side date range filter */}
+        <DateRangePicker value={apiDateRange} onChange={setApiDateRange} />
       </div>
 
       {/* Session table */}

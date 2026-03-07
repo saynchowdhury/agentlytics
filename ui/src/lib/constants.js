@@ -52,6 +52,18 @@ export function formatDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Convert { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } date range to API ms timestamps.
+ * Returns {} if range is null/incomplete.
+ */
+export function dateRangeToApiParams(range) {
+  if (!range?.from || !range?.to) return {};
+  return {
+    dateFrom: new Date(range.from).getTime(),
+    dateTo: new Date(range.to + 'T23:59:59').getTime(),
+  };
+}
+
 export function formatDateTime(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleString();

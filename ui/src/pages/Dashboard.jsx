@@ -5,8 +5,9 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearSca
 import { Doughnut, Bar, Line } from 'react-chartjs-2'
 import KpiCard from '../components/KpiCard'
 import ActivityHeatmap from '../components/ActivityHeatmap'
+import DateRangePicker from '../components/DateRangePicker'
+import { editorColor, editorLabel, formatNumber, dateRangeToApiParams } from '../lib/constants'
 import { fetchDailyActivity, fetchOverview as fetchOverviewApi, fetchDashboardStats, fetchShareImage } from '../lib/api'
-import { editorColor, editorLabel, formatNumber } from '../lib/constants'
 import { useTheme } from '../lib/theme'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Filler)
@@ -29,6 +30,7 @@ export default function Dashboard({ overview }) {
   const [filteredData, setFilteredData] = useState(null)
   const [stats, setStats] = useState(null)
   const [selectedEditor, setSelectedEditor] = useState(null)
+  const [dateRange, setDateRange] = useState(null)
   const { dark } = useTheme()
   const [sharing, setSharing] = useState(false)
   const txtColor = dark ? '#888' : '#555'
@@ -50,27 +52,23 @@ export default function Dashboard({ overview }) {
   const noLegend = { legend: { display: false }, tooltip: { bodyFont: { family: MONO, size: 10 }, titleFont: { family: MONO, size: 10 } } }
 
   useEffect(() => {
-    fetchDailyActivity().then(setDailyData)
-    fetchDashboardStats().then(setStats)
-  }, [])
-
-  useEffect(() => {
+    const dateParams = dateRangeToApiParams(dateRange)
     if (!selectedEditor) {
       setFilteredData(null)
-      fetchDailyActivity().then(setDailyData)
-      fetchDashboardStats().then(setStats)
+      fetchDailyActivity(dateParams).then(setDailyData)
+      fetchDashboardStats(dateParams).then(setStats)
       return
     }
     Promise.all([
-      fetchOverviewApi({ editor: selectedEditor }),
-      fetchDailyActivity({ editor: selectedEditor }),
-      fetchDashboardStats({ editor: selectedEditor }),
+      fetchOverviewApi({ editor: selectedEditor, ...dateParams }),
+      fetchDailyActivity({ editor: selectedEditor, ...dateParams }),
+      fetchDashboardStats({ editor: selectedEditor, ...dateParams }),
     ]).then(([ov, daily, st]) => {
       setFilteredData(ov)
       setDailyData(daily)
       setStats(st)
     })
-  }, [selectedEditor])
+  }, [selectedEditor, dateRange])
 
   if (!overview) return <div className="text-sm py-12 text-center" style={{ color: 'var(--c-text2)' }}>loading...</div>
 
@@ -259,6 +257,12 @@ export default function Dashboard({ overview }) {
             </span>
           </div>
         )}
+      </div>
+
+      {/* Date range filter bar */}
+      <div className="card px-3 py-2 flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider mr-1" style={{ color: 'var(--c-text3)' }}>period</span>
+        <DateRangePicker value={dateRange} onChange={setDateRange} />
       </div>
 
       {/* KPIs row 1: Core stats */}

@@ -267,6 +267,8 @@ function getCachedChats(opts = {}) {
   if (opts.editor) { sql += ' AND source LIKE ?'; params.push(`%${opts.editor}%`); }
   if (opts.folder) { sql += ' AND folder LIKE ?'; params.push(`%${opts.folder}%`); }
   if (opts.named !== false) { sql += ' AND (name IS NOT NULL OR bubble_count > 0)'; }
+  if (opts.dateFrom) { sql += ' AND COALESCE(last_updated_at, created_at) >= ?'; params.push(opts.dateFrom); }
+  if (opts.dateTo) { sql += ' AND COALESCE(last_updated_at, created_at) <= ?'; params.push(opts.dateTo); }
   sql += ' ORDER BY last_updated_at DESC';
   if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }
   if (opts.offset) { sql += ' OFFSET ?'; params.push(opts.offset); }
@@ -279,14 +281,20 @@ function countCachedChats(opts = {}) {
   if (opts.editor) { sql += ' AND source LIKE ?'; params.push(`%${opts.editor}%`); }
   if (opts.folder) { sql += ' AND folder LIKE ?'; params.push(`%${opts.folder}%`); }
   if (opts.named !== false) { sql += ' AND (name IS NOT NULL OR bubble_count > 0)'; }
+  if (opts.dateFrom) { sql += ' AND COALESCE(last_updated_at, created_at) >= ?'; params.push(opts.dateFrom); }
+  if (opts.dateTo) { sql += ' AND COALESCE(last_updated_at, created_at) <= ?'; params.push(opts.dateTo); }
   return db.prepare(sql).get(params).cnt;
 }
 
 function getCachedOverview(opts = {}) {
-  const editorFilter = opts.editor || null;
-  const where = editorFilter ? ' WHERE source = ?' : '';
-  const whereAnd = editorFilter ? ' AND source = ?' : '';
-  const params = editorFilter ? [editorFilter] : [];
+  // Build conditions dynamically to support editor + date range filters
+  const conditions = [];
+  const params = [];
+  if (opts.editor) { conditions.push('source = ?'); params.push(opts.editor); }
+  if (opts.dateFrom) { conditions.push('COALESCE(last_updated_at, created_at) >= ?'); params.push(opts.dateFrom); }
+  if (opts.dateTo) { conditions.push('COALESCE(last_updated_at, created_at) <= ?'); params.push(opts.dateTo); }
+  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  const whereAnd = conditions.length > 0 ? ' AND ' + conditions.join(' AND ') : '';
 
   const totalChats = db.prepare(`SELECT COUNT(*) as cnt FROM chats${where}`).get(...params).cnt;
   // Editors list is always unfiltered so the breakdown remains visible
@@ -344,9 +352,12 @@ function getCachedOverview(opts = {}) {
 }
 
 function getCachedDailyActivity(opts = {}) {
-  const editorFilter = opts.editor || null;
-  const whereAnd = editorFilter ? ' AND source = ?' : '';
-  const params = editorFilter ? [editorFilter] : [];
+  const conditions = [];
+  const params = [];
+  if (opts.editor) { conditions.push('source = ?'); params.push(opts.editor); }
+  if (opts.dateFrom) { conditions.push('COALESCE(last_updated_at, created_at) >= ?'); params.push(opts.dateFrom); }
+  if (opts.dateTo) { conditions.push('COALESCE(last_updated_at, created_at) <= ?'); params.push(opts.dateTo); }
+  const whereAnd = conditions.length > 0 ? ' AND ' + conditions.join(' AND ') : '';
   const rows = db.prepare(`
     SELECT
       date(COALESCE(last_updated_at, created_at)/1000, 'unixepoch', 'localtime') as day,
@@ -375,6 +386,8 @@ function getCachedDeepAnalytics(opts = {}) {
   const params = [];
   if (opts.editor) { sql += ' AND c.source LIKE ?'; params.push(`%${opts.editor}%`); }
   if (opts.folder) { sql += ' AND c.folder = ?'; params.push(opts.folder); }
+  if (opts.dateFrom) { sql += ' AND COALESCE(c.last_updated_at, c.created_at) >= ?'; params.push(opts.dateFrom); }
+  if (opts.dateTo) { sql += ' AND COALESCE(c.last_updated_at, c.created_at) <= ?'; params.push(opts.dateTo); }
   sql += ' ORDER BY cs.analyzed_at DESC';
   if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }
 
@@ -460,16 +473,22 @@ function getCachedChat(id) {
   };
 }
 
-function getCachedProjects() {
+function getCachedProjects(opts = {}) {
+  // Build date filter
+  let dateFilter = '';
+  const dateParams = [];
+  if (opts.dateFrom) { dateFilter += ' AND COALESCE(last_updated_at, created_at) >= ?'; dateParams.push(opts.dateFrom); }
+  if (opts.dateTo) { dateFilter += ' AND COALESCE(last_updated_at, created_at) <= ?'; dateParams.push(opts.dateTo); }
+
   // All unique projects with their stats
   const projects = db.prepare(`
     SELECT folder, source, COUNT(*) as count,
       MIN(COALESCE(last_updated_at, created_at)) as first_seen,
       MAX(COALESCE(last_updated_at, created_at)) as last_seen
-    FROM chats WHERE folder IS NOT NULL
+    FROM chats WHERE folder IS NOT NULL${dateFilter}
     GROUP BY folder, source
     ORDER BY folder, count DESC
-  `).all();
+  `).all(...dateParams);
 
   // Group by folder
   const map = {};
@@ -484,12 +503,13 @@ function getCachedProjects() {
   // For each project, get models and tools from chat_stats
   const result = [];
   for (const [folder, proj] of Object.entries(map)) {
+    const statsDateFilter = dateFilter.replace(/COALESCE\(last_updated_at/g, 'COALESCE(c.last_updated_at').replace(/created_at\)/g, 'c.created_at)');
     const stats = db.prepare(`
       SELECT cs.models, cs.tool_calls, cs.total_messages, cs.total_input_tokens, cs.total_output_tokens,
              cs.total_user_chars, cs.total_assistant_chars, cs.total_cache_read, cs.total_cache_write
       FROM chat_stats cs JOIN chats c ON cs.chat_id = c.id
-      WHERE c.folder = ?
-    `).all(folder);
+      WHERE c.folder = ?${statsDateFilter}
+    `).all(folder, ...dateParams);
 
     const modelFreq = {};
     const toolFreq = {};
@@ -643,10 +663,14 @@ async function resetAndRescanAsync(onProgress) {
 }
 
 function getCachedDashboardStats(opts = {}) {
-  const editorFilter = opts.editor || null;
-  const where = editorFilter ? ' WHERE source = ?' : '';
-  const whereAnd = editorFilter ? ' AND source = ?' : '';
-  const params = editorFilter ? [editorFilter] : [];
+  // Build conditions dynamically to support editor + date range filters
+  const conditions = [];
+  const params = [];
+  if (opts.editor) { conditions.push('source = ?'); params.push(opts.editor); }
+  if (opts.dateFrom) { conditions.push('COALESCE(last_updated_at, created_at) >= ?'); params.push(opts.dateFrom); }
+  if (opts.dateTo) { conditions.push('COALESCE(last_updated_at, created_at) <= ?'); params.push(opts.dateTo); }
+  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+  const whereAnd = conditions.length > 0 ? ' AND ' + conditions.join(' AND ') : '';
 
   // ── Hourly distribution (aggregate across all days) ──
   const hourlyRows = db.prepare(`

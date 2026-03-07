@@ -1,8 +1,15 @@
 export const BASE = '';
 
+// Append optional dateFrom/dateTo (ms timestamps) to URLSearchParams
+function appendDateParams(q, params) {
+  if (params.dateFrom) q.set('dateFrom', params.dateFrom);
+  if (params.dateTo) q.set('dateTo', params.dateTo);
+}
+
 export async function fetchOverview(params = {}) {
   const q = new URLSearchParams();
   if (params.editor) q.set('editor', params.editor);
+  appendDateParams(q, params);
   const qs = q.toString();
   const res = await fetch(`${BASE}/api/overview${qs ? '?' + qs : ''}`);
   return res.json();
@@ -15,6 +22,7 @@ export async function fetchChats(params = {}) {
   if (params.limit) q.set('limit', params.limit);
   if (params.offset) q.set('offset', params.offset);
   if (params.named === false) q.set('named', 'false');
+  appendDateParams(q, params);
   const res = await fetch(`${BASE}/api/chats?${q}`);
   return res.json();
 }
@@ -24,14 +32,18 @@ export async function fetchChat(id) {
   return res.json();
 }
 
-export async function fetchProjects() {
-  const res = await fetch(`${BASE}/api/projects`);
+export async function fetchProjects(params = {}) {
+  const q = new URLSearchParams();
+  appendDateParams(q, params);
+  const qs = q.toString();
+  const res = await fetch(`${BASE}/api/projects${qs ? '?' + qs : ''}`);
   return res.json();
 }
 
 export async function fetchDailyActivity(params = {}) {
   const q = new URLSearchParams();
   if (params.editor) q.set('editor', params.editor);
+  appendDateParams(q, params);
   const qs = q.toString();
   const res = await fetch(`${BASE}/api/daily-activity${qs ? '?' + qs : ''}`);
   return res.json();
@@ -42,6 +54,7 @@ export async function fetchDeepAnalytics(params = {}) {
   if (params.editor) q.set('editor', params.editor);
   if (params.folder) q.set('folder', params.folder);
   if (params.limit) q.set('limit', params.limit);
+  appendDateParams(q, params);
   const res = await fetch(`${BASE}/api/deep-analytics?${q}`);
   return res.json();
 }
@@ -64,6 +77,7 @@ export function refetchAgents(onProgress) {
 export async function fetchDashboardStats(params = {}) {
   const q = new URLSearchParams();
   if (params.editor) q.set('editor', params.editor);
+  appendDateParams(q, params);
   const qs = q.toString();
   const res = await fetch(`${BASE}/api/dashboard-stats${qs ? '?' + qs : ''}`);
   return res.json();

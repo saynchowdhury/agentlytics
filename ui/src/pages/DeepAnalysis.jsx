@@ -6,6 +6,7 @@ import { fetchDeepAnalytics, fetchToolCalls } from '../lib/api'
 import { editorLabel, editorColor, formatNumber, formatDateTime } from '../lib/constants'
 import { useTheme } from '../lib/theme'
 import KpiCard from '../components/KpiCard'
+import DateRangePicker from '../components/DateRangePicker'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement)
 
@@ -138,6 +139,7 @@ function ToolDrillDown({ toolName, folder, onClose }) {
 export default function DeepAnalysis({ overview }) {
   const [editor, setEditor] = useState('')
   const [folder, setFolder] = useState('')
+  const [dateRange, setDateRange] = useState(null)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [selectedTool, setSelectedTool] = useState(null)
@@ -153,12 +155,12 @@ export default function DeepAnalysis({ overview }) {
 
   async function analyze() {
     setLoading(true)
-    const result = await fetchDeepAnalytics({ editor, folder: folder || undefined, limit: 500 })
+    const result = await fetchDeepAnalytics({ editor, folder: folder || undefined, limit: 500, ...dateRangeToApiParams(dateRange) })
     setData(result)
     setLoading(false)
   }
 
-  useEffect(() => { analyze() }, [editor, folder])
+  useEffect(() => { analyze() }, [editor, folder, dateRange])
 
   const tools = data?.topTools?.slice(0, 15) || []
   const models = data?.topModels?.slice(0, 10) || []
@@ -201,6 +203,8 @@ export default function DeepAnalysis({ overview }) {
         )}
         {data && <span className="text-[10px]" style={{ color: 'var(--c-text2)' }}>{data.analyzedChats} sessions</span>}
       </div>
+      {/* Date range filter */}
+      <DateRangePicker value={dateRange} onChange={setDateRange} />
 
       {data && (
         <>
