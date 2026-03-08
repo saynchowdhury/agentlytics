@@ -96,7 +96,7 @@ function generateShareSvg(overview, stats, costs, opts = {}) {
 
   const W = 1200;
   const H_FIXED = 675;
-  const F = "'Menlo','Monaco','Cascadia Code','Courier New',monospace";
+  const F = "\"'Menlo','Monaco','Cascadia Code','Courier New',monospace\"";
   const editors = overview.editors || [];
   const tk = stats.tokens || {};
   const streaks = stats.streaks || {};

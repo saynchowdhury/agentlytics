@@ -53,25 +53,33 @@ export default function ShareModal({ open, onClose }) {
     if (!svg) return
     setDownloading(true)
     try {
-      const canvas = document.createElement('canvas')
-      canvas.width = 1200
-      canvas.height = 675
-      const ctx = canvas.getContext('2d')
+      const scale = 2
+      const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(svgBlob)
       const img = new Image()
-      const svgB64 = btoa(unescape(encodeURIComponent(svg)))
-      const dataUrl = `data:image/svg+xml;base64,${svgB64}`
+      img.width = 1200 * scale
+      img.height = 675 * scale
       await new Promise((resolve, reject) => {
         img.onload = resolve
         img.onerror = reject
-        img.src = dataUrl
+        img.src = url
       })
-      ctx.drawImage(img, 0, 0, 1200, 675)
-      const pngUrl = canvas.toDataURL('image/png')
-      const a = document.createElement('a')
-      a.href = pngUrl
-      a.download = 'agentlytics.png'
-      a.click()
-    } catch {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1200 * scale
+      canvas.height = 675 * scale
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, 1200 * scale, 675 * scale)
+      URL.revokeObjectURL(url)
+      canvas.toBlob((blob) => {
+        if (!blob) return
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = 'agentlytics.png'
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+      }, 'image/png')
+    } catch (e) {
+      console.error('PNG conversion failed:', e)
       const blob = new Blob([svg], { type: 'image/svg+xml' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
