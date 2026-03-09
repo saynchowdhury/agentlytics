@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const Database = require('better-sqlite3');
 
 // OpenCode stores data in different locations depending on the platform
 // - Windows: %LOCALAPPDATA%\opencode\storage (not Roaming)
@@ -21,6 +22,118 @@ const STORAGE_DIR = getOpenCodeStoragePath();
 const SESSION_DIR = path.join(STORAGE_DIR, 'session');
 const MESSAGE_DIR = path.join(STORAGE_DIR, 'message');
 const PART_DIR = path.join(STORAGE_DIR, 'part');
+
+// OpenCode also stores data in a SQLite database (older/primary store)
+function getOpenCodeDbPath() {
+  const home = os.homedir();
+  switch (process.platform) {
+    case 'win32':
+      return path.join(home, 'AppData', 'Local', 'opencode', 'opencode.db');
+    case 'darwin':
+    case 'linux':
+    default:
+      return path.join(home, '.local', 'share', 'opencode', 'opencode.db');
+  }
+}
+
+const DB_PATH = getOpenCodeDbPath();
+
+// ============================================================
+// Query SQLite using better-sqlite3
+// ============================================================
+
+function queryDb(sql) {
+  if (!fs.existsSync(DB_PATH)) return [];
+  try {
+    const db = new Database(DB_PATH, { readonly: true });
+    const rows = db.prepare(sql).all();
+    db.close();
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+function getSqliteSessions() {
+  return queryDb(
+    `SELECT s.id, s.title, s.directory, s.time_created, s.time_updated,
+            p.worktree, p.name as project_name,
+            (SELECT count(*) FROM message m WHERE m.session_id = s.id) as msg_count
+     FROM session s LEFT JOIN project p ON s.project_id = p.id
+     ORDER BY s.time_updated DESC`
+  );
+}
+
+function getSqliteMessages(sessionId) {
+  if (!fs.existsSync(DB_PATH)) return [];
+  try {
+    const db = new Database(DB_PATH, { readonly: true });
+    const messages = db.prepare(
+      `SELECT m.id as msg_id, m.data as msg_data, m.time_created
+       FROM message m WHERE m.session_id = ? ORDER BY m.time_created ASC`
+    ).all(sessionId);
+
+    const result = [];
+    for (const msg of messages) {
+      let msgData;
+      try { msgData = JSON.parse(msg.msg_data); } catch { continue; }
+
+      const role = msgData.role;
+      if (!role) continue;
+
+      const parts = db.prepare(
+        `SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC`
+      ).all(msg.msg_id);
+
+      const contentParts = [];
+      for (const part of parts) {
+        let partData;
+        try { partData = JSON.parse(part.data); } catch { continue; }
+        const type = partData.type;
+
+        if (type === 'text' && partData.text) {
+          contentParts.push(partData.text);
+        } else if (type === 'thinking' || type === 'reasoning') {
+          if (partData.text) contentParts.push(`[thinking] ${partData.text}`);
+        } else if (type === 'tool-call' || type === 'tool_use' || type === 'tool-use' || type === 'tool') {
+          const toolName = partData.name || partData.toolName || partData.tool || 'tool';
+          let argKeys = '';
+          try {
+            const input = typeof partData.input === 'string' ? JSON.parse(partData.input) : (partData.input || partData.args || partData.arguments || partData.state?.input || {});
+            argKeys = typeof input === 'object' ? Object.keys(input).join(', ') : '';
+          } catch {}
+          contentParts.push(`[tool-call: ${toolName}(${argKeys})]`);
+        } else if (type === 'tool-result' || type === 'tool_result') {
+          const preview = (partData.text || partData.output || partData.state?.output || '').substring(0, 500);
+          contentParts.push(`[tool-result] ${preview}`);
+        }
+      }
+
+      const content = contentParts.join('\n');
+      if (!content) continue;
+
+      let modelValue = null;
+      if (typeof msgData.modelID === 'string') {
+        modelValue = msgData.modelID;
+      } else if (msgData.model && typeof msgData.model === 'object' && msgData.model.modelID) {
+        modelValue = msgData.model.modelID;
+      } else if (typeof msgData.model === 'string') {
+        modelValue = msgData.model;
+      }
+
+      result.push({
+        role: role === 'user' ? 'user' : role === 'assistant' ? 'assistant' : role,
+        content,
+        _model: modelValue,
+      });
+    }
+
+    db.close();
+    return result;
+  } catch {
+    return [];
+  }
+}
 
 // ============================================================
 // Scan JSON files from OpenCode storage
@@ -156,27 +269,64 @@ function getMessagesForSession(sessionId) {
 const name = 'opencode';
 
 function getChats() {
-  const sessions = getAllSessions();
+  const seen = new Set();
+  const chats = [];
 
-  return sessions.map(s => ({
-    source: 'opencode',
-    composerId: s.id,
-    name: s.title || null,
-    createdAt: s.time?.created || null,
-    lastUpdatedAt: s.time?.updated || null,
-    mode: s.mode || 'opencode',
-    folder: s.directory || null,
-    encrypted: false,
-    bubbleCount: getMessageCount(s.id),
-    _agent: s.agent,
-    _model: s.modelID,
-    _provider: s.providerID,
-    _sessionData: s,
-  })).sort((a, b) => (b.lastUpdatedAt || 0) - (a.lastUpdatedAt || 0));
+  // 1. JSON file-based sessions (newer storage format)
+  const fileSessions = getAllSessions();
+  for (const s of fileSessions) {
+    seen.add(s.id);
+    chats.push({
+      source: 'opencode',
+      composerId: s.id,
+      name: s.title || null,
+      createdAt: s.time?.created || null,
+      lastUpdatedAt: s.time?.updated || null,
+      mode: s.mode || 'opencode',
+      folder: s.directory || null,
+      encrypted: false,
+      bubbleCount: getMessageCount(s.id),
+      _agent: s.agent,
+      _model: s.modelID,
+      _provider: s.providerID,
+      _sessionData: s,
+      _storageType: 'file',
+    });
+  }
+
+  // 2. SQLite sessions (older/primary store) — add any not already found in files
+  const dbSessions = getSqliteSessions();
+  for (const row of dbSessions) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    chats.push({
+      source: 'opencode',
+      composerId: row.id,
+      name: cleanTitle(row.title),
+      createdAt: row.time_created || null,
+      lastUpdatedAt: row.time_updated || null,
+      mode: 'opencode',
+      folder: row.worktree || row.directory || null,
+      encrypted: false,
+      bubbleCount: row.msg_count || 0,
+      _storageType: 'sqlite',
+    });
+  }
+
+  return chats.sort((a, b) => (b.lastUpdatedAt || 0) - (a.lastUpdatedAt || 0));
+}
+
+function cleanTitle(title) {
+  if (!title) return null;
+  if (title.startsWith('New session - ')) return null;
+  return title.substring(0, 120) || null;
 }
 
 function getMessages(chat) {
-  return getMessagesForSession(chat.composerId);
+  // Prefer file-based messages; fall back to SQLite
+  const fileMessages = getMessagesForSession(chat.composerId);
+  if (fileMessages.length > 0) return fileMessages;
+  return getSqliteMessages(chat.composerId);
 }
 
 const labels = { 'opencode': 'OpenCode' };
