@@ -471,48 +471,6 @@ function mergeChats(liveChats, offlineChats) {
   return Array.from(map.values()).sort((a, b) => (b.lastUpdatedAt || b.createdAt || 0) - (a.lastUpdatedAt || a.createdAt || 0));
 }
 
-function readOfflineArtifactMessages(chat) {
-  const noDataMsg = [{
-    role: 'system',
-    content: 'Offline metadata was found for this Antigravity session, but no local artifact files were available. Start Antigravity to fetch the full conversation transcript.',
-  }];
-
-  const brainDir = path.join(ANTIGRAVITY_BRAIN_DIR, chat.composerId);
-  if (!fs.existsSync(brainDir)) return noDataMsg;
-
-  const artifactNames = ['task.md', 'implementation_plan.md', 'walkthrough.md'];
-  const messages = [{
-    role: 'system',
-    content: 'Partial offline Antigravity view from local artifact files. Start Antigravity to load full cascade step history.',
-  }];
-
-  for (const artifactName of artifactNames) {
-    const artifactPath = path.join(brainDir, artifactName);
-    if (!fs.existsSync(artifactPath)) continue;
-
-    let content = null;
-    try {
-      content = fs.readFileSync(artifactPath, 'utf-8').trim();
-    } catch {
-      content = null;
-    }
-    if (!content) continue;
-
-    let meta = null;
-    try { meta = JSON.parse(fs.readFileSync(`${artifactPath}.metadata.json`, 'utf-8')); } catch {}
-    const header = [`# Offline Artifact: ${artifactName}`];
-    if (meta?.summary) header.push(`Summary: ${meta.summary}`);
-    if (meta?.updatedAt) header.push(`Updated: ${meta.updatedAt}`);
-    header.push('');
-
-    messages.push({
-      role: 'assistant',
-      content: `${header.join('\n')}${content}`,
-    });
-  }
-
-  return messages.length > 1 ? messages : noDataMsg;
-}
 
 // ============================================================
 // Cross-platform process utilities
@@ -889,8 +847,7 @@ function getMessages(chat) {
     messages.push(...tail);
   }
 
-  if (messages.length > 0) return messages;
-  return readOfflineArtifactMessages(chat);
+  return messages;
 }
 
 // ============================================================
@@ -976,12 +933,48 @@ const labels = { 'antigravity': 'Antigravity' };
 
 function getArtifacts(folder) {
   const { scanArtifacts } = require('./base');
-  return scanArtifacts(folder, {
+  const artifacts = folder ? scanArtifacts(folder, {
     editor: 'antigravity',
     label: 'Antigravity',
-    files: ['.windsurfrules'],
-    dirs: ['.windsurf/workflows', '.windsurf/rules', '.windsurf/plans', '.windsurf/skills'],
-  });
+    files: [],
+    dirs: ['.gemini/skills', '.gemini/rules', '.gemini/plans', '.gemini/workflows'],
+  }) : [];
+
+  // Add brain artifacts (task.md, implementation_plan.md, walkthrough.md) per session
+  if (fs.existsSync(ANTIGRAVITY_BRAIN_DIR)) {
+    try {
+      const sessions = fs.readdirSync(ANTIGRAVITY_BRAIN_DIR);
+      const brainFileNames = ['task.md', 'implementation_plan.md', 'walkthrough.md'];
+      for (const sessionId of sessions) {
+        const sessionDir = path.join(ANTIGRAVITY_BRAIN_DIR, sessionId);
+        try {
+          if (!fs.statSync(sessionDir).isDirectory()) continue;
+        } catch { continue; }
+        for (const fileName of brainFileNames) {
+          const filePath = path.join(sessionDir, fileName);
+          if (!fs.existsSync(filePath)) continue;
+          try {
+            const stat = fs.statSync(filePath);
+            const content = fs.readFileSync(filePath, 'utf-8');
+            if (!content.trim()) continue;
+            const lines = content.split('\n').length;
+            artifacts.push({
+              name: fileName,
+              path: filePath,
+              relativePath: `brain/${sessionId.slice(0, 8)}/${fileName}`,
+              size: stat.size,
+              lines,
+              modifiedAt: stat.mtimeMs,
+              editor: 'antigravity',
+              editorLabel: 'Antigravity',
+            });
+          } catch { /* skip unreadable */ }
+        }
+      }
+    } catch { /* skip if brain dir unreadable */ }
+  }
+
+  return artifacts;
 }
 
 module.exports = { name, labels, getChats, getMessages, resetCache, getUsage, getArtifacts };

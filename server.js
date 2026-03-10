@@ -415,6 +415,13 @@ app.get('/api/artifact-content', (req, res) => {
       const artifacts = getAllArtifacts(project.folder);
       if (artifacts.some(a => a.path === filePath)) { allowed = true; break; }
     }
+    // Also check global/editor-level artifacts not tied to any project (e.g. brain files)
+    if (!allowed) {
+      try {
+        const artifacts = getAllArtifacts(null);
+        if (artifacts.some(a => a.path === filePath)) allowed = true;
+      } catch { /* skip */ }
+    }
     if (!allowed) return res.status(403).json({ error: 'Not an artifact file' });
 
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });

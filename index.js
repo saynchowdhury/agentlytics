@@ -244,7 +244,7 @@ for (const [src, label, count] of displayList) {
 }
 console.log('');
 
-// ── Analyze sessions with robot animation ──────────────────
+// ── Analyze sessions with robot animation (async to allow Ctrl+C) ──
 const logUpdate = require('log-update');
 const BOT_STYLES = [
   { l: '(', r: ')', color: '#818cf8' },
@@ -252,44 +252,46 @@ const BOT_STYLES = [
   { l: '{', r: '}', color: '#34d399' },
   { l: '<', r: '>', color: '#fbbf24' },
 ];
-let tick = 0;
 
-const startTime = Date.now();
-const result = cache.scanAll((p) => {
-  tick++;
-  if (tick % 5 !== 0) return;
-  const frame = Math.floor(tick / 40);
-  const b = BOT_STYLES[frame % 4];
-  const dots = '.'.repeat((Math.floor(tick / 10) % 3) + 1).padEnd(3);
-  logUpdate(`  ${chalk.hex(b.color)(`${b.l}● ●${b.r}`)}  ${chalk.dim(`Analyzing${dots} ${p.scanned}/${p.total}`)}`);
-}, { chats: allChats });
-const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-const allFaces = BOT_STYLES.map(b => chalk.hex(b.color)(`${b.l}● ●${b.r}`)).join(' ');
-logUpdate(`  ${allFaces}  ${chalk.green(`✓ ${result.analyzed} analyzed, ${result.skipped} cached (${elapsed}s)`)}`);
-logUpdate.done();
-console.log('');
-
-// In collect-only mode, exit after cache is built
-if (collectOnly) {
-  const cacheDbPath = path.join(os.homedir(), '.agentlytics', 'cache.db');
-  console.log(chalk.dim(`  Cache file: ${cacheDbPath}`));
+(async () => {
+  let tick = 0;
+  const startTime = Date.now();
+  const result = await cache.scanAllAsync((p) => {
+    tick++;
+    if (tick % 5 !== 0) return;
+    const frame = Math.floor(tick / 40);
+    const b = BOT_STYLES[frame % 4];
+    const dots = '.'.repeat((Math.floor(tick / 10) % 3) + 1).padEnd(3);
+    logUpdate(`  ${chalk.hex(b.color)(`${b.l}● ●${b.r}`)}  ${chalk.dim(`Analyzing${dots} ${p.scanned}/${p.total}`)}`);
+  }, { chats: allChats });
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const allFaces = BOT_STYLES.map(b => chalk.hex(b.color)(`${b.l}● ●${b.r}`)).join(' ');
+  logUpdate(`  ${allFaces}  ${chalk.green(`✓ ${result.analyzed} analyzed, ${result.skipped} cached (${elapsed}s)`)}`);
+  logUpdate.done();
   console.log('');
-  process.exit(0);
-}
 
-// Start server
-const app = require('./server');
-app.listen(PORT, () => {
-  const url = `http://localhost:${PORT}`;
-  console.log(chalk.green(`  ✓ Dashboard ready at ${chalk.bold.white(url)}`));
-  console.log('');
-  console.log(chalk.dim('  💡 Share sessions with your team:'));
-  console.log(chalk.dim(`     npx agentlytics --relay                        Start a relay server`));
-  console.log(chalk.dim(`     npx agentlytics --join <host:port> --username   Join a relay server`));
-  console.log('');
-  console.log(chalk.dim('  Press Ctrl+C to stop\n'));
+  // In collect-only mode, exit after cache is built
+  if (collectOnly) {
+    const cacheDbPath = path.join(os.homedir(), '.agentlytics', 'cache.db');
+    console.log(chalk.dim(`  Cache file: ${cacheDbPath}`));
+    console.log('');
+    process.exit(0);
+  }
 
-  // Auto-open browser
-  const open = require('open');
-  open(url).catch(() => {});
-});
+  // Start server
+  const app = require('./server');
+  app.listen(PORT, () => {
+    const url = `http://localhost:${PORT}`;
+    console.log(chalk.green(`  ✓ Dashboard ready at ${chalk.bold.white(url)}`));
+    console.log('');
+    console.log(chalk.dim('  💡 Share sessions with your team:'));
+    console.log(chalk.dim(`     npx agentlytics --relay                        Start a relay server`));
+    console.log(chalk.dim(`     npx agentlytics --join <host:port> --username   Join a relay server`));
+    console.log('');
+    console.log(chalk.dim('  Press Ctrl+C to stop\n'));
+
+    // Auto-open browser
+    const open = require('open');
+    open(url).catch(() => {});
+  });
+})();

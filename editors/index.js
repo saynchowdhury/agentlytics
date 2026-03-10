@@ -97,14 +97,16 @@ function getAllArtifacts(folder) {
   }
 
   // General / shared artifact files (not tied to any specific editor)
-  try {
-    artifacts.push(...scanArtifacts(folder, {
-      editor: '_general',
-      label: 'General',
-      files: ['AGENTS.md', '.mcp.json', 'plan.md', 'progress.md', 'TODO.md', 'CONVENTIONS.md', 'ARCHITECTURE.md', 'PLANNING.md'],
-      dirs: [],
-    }));
-  } catch { /* skip */ }
+  if (folder) {
+    try {
+      artifacts.push(...scanArtifacts(folder, {
+        editor: '_general',
+        label: 'General',
+        files: ['AGENTS.md', '.mcp.json', 'plan.md', 'progress.md', 'TODO.md', 'CONVENTIONS.md', 'ARCHITECTURE.md', 'PLANNING.md'],
+        dirs: [],
+      }));
+    } catch { /* skip */ }
+  }
 
   // Deduplicate by path — editor-specific entries take priority over general
   const seen = new Map();

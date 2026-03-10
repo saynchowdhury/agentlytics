@@ -771,8 +771,8 @@ function safeParseJson(s) {
  * Async version of scanAll that yields the event loop between iterations.
  * Required for SSE streaming so progress events actually flush to the client.
  */
-async function scanAllAsync(onProgress) {
-  const chats = getAllChats();
+async function scanAllAsync(onProgress, opts = {}) {
+  const chats = opts.chats || getAllChats();
   const total = chats.length;
   let scanned = 0;
   let analyzed = 0;
@@ -1375,6 +1375,7 @@ function getDb() { return db; }
 module.exports = {
   initDb,
   scanAll,
+  scanAllAsync,
   getCachedChats,
   countCachedChats,
   getCachedOverview,
